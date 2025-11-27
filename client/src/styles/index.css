@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Minimal global styles using Tailwind tokens to replace the old stylesheet during migration */
+:root {
+	--body-bg: #f0f2f5;
+}
+
+html, body, #root {
+	height: 100%;
+}
+
+body {
+	@apply bg-[var(--body-bg)] font-sans;
+}
+
+/* Legacy styles ported from original_files/style.css into Tailwind component layer
+	 These keep the original visual appearance while remaining inside the Tailwind build. */
+@layer components {
+	.container { display: flex; height: 100vh; }
+
+	/* Left Sidebar */
+	.agents-sidebar { width: 300px; @apply bg-white border-r border-gray-200 flex flex-col; }
+
+	.agent-search-container { @apply p-3 border-b border-gray-200; }
+	.agent-search-input { @apply w-full p-2 border rounded-md text-sm outline-none; }
+	.agent-search-input:focus { box-shadow: 0 0 0 6px rgba(255,177,59,0.06); border-color: #FFB13B; }
+
+	.email-count { @apply inline-block bg-amber-400 text-white px-2 py-0.5 rounded-full text-xs font-semibold mt-1; }
+
+	.thread-actions { @apply flex justify-end mb-4 gap-2; }
+
+	.download-btn { @apply px-4 py-2 bg-green-600 text-white rounded-md font-semibold; }
+	.download-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(76,175,80,0.18); }
+
+	.sidebar-header { @apply px-6 py-6 text-center font-bold text-lg text-gray-900; background: linear-gradient(135deg,#FFB13B 0%,#FFA000 100%); }
+
+	.agents-list { @apply flex-1 overflow-y-auto p-3 space-y-2; }
+
+	.agent-item {
+		@apply w-full text-left p-4 rounded-xl cursor-pointer transition flex items-center gap-3 bg-gray-50 border border-transparent appearance-none;
+		box-shadow: inset 0 0 0 1px rgba(0,0,0,0.02);
+	}
+	.agent-item:hover { background: #ffe8cc; transform: translateX(4px); }
+	.agent-item:focus-visible { @apply outline-none ring-2 ring-amber-200; }
+	.agent-item.active {
+		background: linear-gradient(135deg,#FFB13B 0%,#FFA000 100%);
+		box-shadow: 0 14px 30px rgba(255,177,59,0.35);
+		transform: translateX(4px);
+		color: #fff;
+	}
+
+	.agent-icon { width: 45px; height: 45px; @apply rounded-full flex items-center justify-center font-bold text-lg bg-gradient-to-br from-amber-400 to-amber-600 text-white shadow-md; }
+	.agent-item.active .agent-icon { @apply bg-white text-amber-500; }
+
+	.agent-info { @apply flex-1 text-center; }
+	.agent-name { @apply font-semibold text-sm text-gray-900; }
+	.agent-item.active .agent-name { @apply text-white font-bold; }
+
+	/* Main area */
+	.main-area { @apply flex-1 flex flex-col bg-white; }
+	.main-header { @apply px-6 py-4 border-b bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-between; }
+	.compose-btn { @apply px-5 py-2 rounded-full text-white font-bold bg-gradient-to-br from-amber-400 to-orange-500 shadow-md; }
+	.compose-btn:hover { opacity: 0.95 }
+	.main-content { @apply flex-1 overflow-y-auto p-4; }
+
+	.empty-state { @apply text-center py-10 text-gray-600; }
+	.empty-state-icon { font-size: 36px; margin-bottom: 8px; }
+
+	.email-list-item { @apply p-4 rounded-lg bg-white border border-gray-100 cursor-pointer; }
+	.email-list-item:hover { @apply bg-amber-50; }
+
+	.email-subject { @apply font-semibold text-gray-800; }
+	.email-preview { @apply text-sm text-gray-500 mt-1; }
+	.email-date { @apply text-xs text-gray-400 mt-1; }
+
+	.thread-view .email-message { @apply p-4 rounded-md; }
+	.user-message { @apply bg-amber-50 ml-auto; }
+	.agent-message { @apply bg-gray-50; }
+
+	.reply-box textarea { @apply w-full p-3 border rounded; }
+}
+
+@media screen and (max-width: 768px) {
+	body { overflow: auto; }
+	.container { flex-direction: column; height: auto; }
+	.agents-sidebar { width: 100%; border-right: none; border-bottom: 1px solid #e0e0e0; }
+}
+
+/* Compose & toast UI refinements */
+@layer components {
+	.compose-view { @apply w-full h-full flex justify-center items-start px-4; }
+	.compose-view--max { @apply items-stretch; }
+	.compose-card { @apply w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col; }
+	.compose-card--max { @apply max-w-none h-[calc(100vh-4rem)]; }
+	.compose-card-header { @apply flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-200; }
+	.compose-card-title { @apply text-base font-semibold text-gray-800; }
+	.compose-window-controls { @apply flex items-center gap-1; }
+	.icon-btn { @apply px-2 py-1; }
+	.compose-fields { @apply px-6 py-4 space-y-3 border-b border-gray-100 bg-white; }
+	.compose-field-row { @apply flex items-center gap-4; }
+	.compose-field-label { @apply w-16 text-xs uppercase tracking-wide text-gray-500; }
+	.compose-field-input { @apply flex-1 border-b border-gray-200 focus:border-amber-400 focus:outline-none pb-1 text-sm; }
+	.compose-field-input::placeholder { @apply text-gray-400; }
+	.compose-toolbar { @apply flex items-center gap-2 px-6 py-3 bg-gray-50 border-b border-gray-100 flex-wrap; }
+	.toolbar-divider { @apply w-px h-6 bg-gray-200 mx-1; }
+	.toolbar-btn { @apply px-2.5 py-1.5 border border-gray-200 rounded-md text-sm bg-white shadow-sm hover:bg-gray-50 transition; }
+	.toolbar-btn.active { @apply bg-amber-50 border-amber-300 text-amber-700; }
+	.draft-menu { @apply relative ml-auto; }
+	.draft-menu-panel { @apply absolute right-0 mt-2 w-64 bg-white border border-gray-100 rounded-xl shadow-xl z-20 overflow-hidden; }
+	.draft-menu-empty { @apply px-4 py-6 text-sm text-gray-500 text-center; }
+	.draft-menu-item { @apply w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-gray-50; }
+	.draft-menu-item:last-child { border-bottom: none; }
+	.draft-menu-title { @apply font-medium text-gray-800 truncate; }
+	.draft-menu-meta { @apply text-xs text-gray-500 mt-1; }
+
+	.compose-body-wrapper { @apply px-6 py-4 bg-white flex-1 overflow-auto; }
+	.compose-body-editor {
+		@apply w-full border border-gray-200 rounded-xl min-h-[14rem] p-4 text-sm text-gray-800 bg-white focus:outline-none focus:border-amber-300;
+		box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+	}
+	.compose-body-editor:empty:before {
+		content: attr(data-placeholder);
+		@apply text-gray-400 pointer-events-none;
+	}
+	.compose-footer { @apply flex items-center justify-between px-6 py-4 bg-gray-50 border-t border-gray-100; }
+	.compose-actions { @apply flex items-center gap-3; }
+	.send-btn { @apply inline-flex items-center gap-2 bg-amber-500 text-white font-semibold px-5 py-2.5 rounded-full shadow-md hover:bg-amber-600 transition; }
+	.ghost-btn { @apply px-4 py-2 border border-gray-200 rounded-full text-sm text-gray-700 hover:border-amber-300 hover:text-amber-600 transition; }
+	.draft-indicator { @apply text-xs text-gray-500; }
+
+	.thread-view .compose-toolbar { @apply bg-transparent border-none px-0; }
+
+	.toast-container { @apply fixed top-4 right-4 flex flex-col gap-3 z-50; }
+	.toast { @apply w-72 bg-white border border-gray-100 rounded-xl p-3 shadow-xl flex gap-3 items-start transition-opacity duration-300; animation: toastSlideIn 0.3s ease; }
+	.toast.success { @apply border-green-200; }
+	.toast.error { @apply border-red-200; }
+	.toast.info { @apply border-amber-200; }
+	.toast-icon { @apply text-xl; }
+	.toast-title { @apply font-semibold text-gray-900; }
+	.toast-message { @apply text-sm text-gray-600; }
+}
+
+@keyframes toastSlideIn {
+	from {
+		opacity: 0;
+		transform: translate3d(10px, 0, 0);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
