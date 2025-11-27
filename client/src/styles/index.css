@@ -57,6 +57,8 @@ body {
 	.agent-info { @apply flex-1 text-center; }
 	.agent-name { @apply font-semibold text-sm text-gray-900; }
 	.agent-item.active .agent-name { @apply text-white font-bold; }
+	.agent-info { @apply flex flex-col items-center gap-1; }
+	.agent-unread-badge { @apply inline-flex items-center justify-center min-w-[1.75rem] px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500 text-white; }
 
 	/* Main area */
 	.main-area { @apply flex-1 flex flex-col bg-white; }
@@ -132,7 +134,29 @@ body {
 
 	.thread-view .compose-toolbar { @apply bg-transparent border-none px-0; }
 
-	.toast-container { @apply fixed top-4 right-4 flex flex-col gap-3 z-50; }
+	.thread-filter-row { @apply flex items-center justify-between mb-4; }
+	.thread-filter-label { @apply text-xs font-semibold uppercase tracking-wide text-gray-500; }
+	.thread-filter-group { @apply inline-flex items-center bg-gray-100 rounded-full p-1 w-max; }
+	.thread-filter-btn { @apply text-xs font-semibold px-3 py-1.5 rounded-full text-gray-600 transition; }
+	.thread-filter-btn.active { @apply bg-white text-amber-600 shadow; }
+
+	.download-dialog-backdrop { @apply fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4; }
+	.download-dialog-card { @apply w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden; animation: downloadDialogFade 0.25s ease; }
+	.download-dialog-header { @apply flex items-start justify-between px-6 py-4 border-b border-gray-100; }
+	.download-dialog-title { @apply text-lg font-semibold text-gray-900; }
+	.download-dialog-subtitle { @apply text-xs text-gray-500; }
+	.download-dialog-body { @apply px-6 py-4 space-y-4; }
+	.download-field-group { @apply flex flex-col gap-1; }
+	.download-field-label { @apply text-xs font-semibold uppercase tracking-wide text-gray-500; }
+	.download-select { @apply border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-700 focus:outline-none focus:border-amber-400; }
+	.download-scope-pills { @apply flex items-center gap-2 mt-2; }
+	.download-scope-pill { @apply px-4 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-600 hover:border-amber-400; }
+	.download-scope-pill.active { @apply bg-amber-500 text-white border-amber-500 shadow; }
+	.download-dialog-footer { @apply flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100; }
+
+	.toast-container { @apply fixed right-4 flex flex-col gap-3 z-50 pointer-events-none; }
+	.toast-container--top { @apply top-4; }
+	.toast-container--bottom { @apply bottom-4; }
 	.toast { @apply w-72 bg-white border border-gray-100 rounded-xl p-3 shadow-xl flex gap-3 items-start transition-opacity duration-300; animation: toastSlideIn 0.3s ease; }
 	.toast.success { @apply border-green-200; }
 	.toast.error { @apply border-red-200; }
@@ -146,6 +170,17 @@ body {
 	from {
 		opacity: 0;
 		transform: translate3d(10px, 0, 0);
+	}
+	to {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
+
+@keyframes downloadDialogFade {
+	from {
+		opacity: 0;
+		transform: translate3d(0, 12px, 0);
 	}
 	to {
 		opacity: 1;

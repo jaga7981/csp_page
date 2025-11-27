@@ -37,13 +37,11 @@ export default function ThreadView({
   threadId,
   onBack,
   onSendReply,
-  onDownloadThread,
 }: {
   thread?: Thread
   threadId?: string
   onBack: () => void
   onSendReply: (text: string) => void
-  onDownloadThread: (id?: string) => void
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
@@ -91,9 +89,6 @@ export default function ThreadView({
     <div className="thread-view mt-6" id="threadView">
       <div className="flex items-center justify-between mb-4">
         <button className="text-sm text-blue-600" id="backToInbox" onClick={onBack}>← Back to Inbox</button>
-        <div>
-          <button className="download-btn mr-2" onClick={() => onDownloadThread && onDownloadThread(threadId)}>📥 Download Thread</button>
-        </div>
       </div>
       <div className="mb-4">
         <div className="text-lg font-semibold mb-2">{thread.subject}</div>

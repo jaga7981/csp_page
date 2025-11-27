@@ -1,21 +1,18 @@
 import React, { useMemo, useState } from 'react'
 
-type Agent = { key: string; name: string; icon: string }
-
-const AGENTS: Agent[] = [
-  { key: 'vendor', name: 'Vendor', icon: 'V' },
-  { key: 'customs', name: 'Customs Broker', icon: 'C' },
-  { key: 'warehouse', name: 'Warehouse Owners', icon: 'W' },
-  { key: 'port', name: 'Port Owners', icon: 'P' },
-  { key: 'account', name: 'Account Manager', icon: 'A' },
-  { key: 'retail', name: 'Retail Bots', icon: 'R' },
-  { key: 'influencer', name: 'Influencer', icon: 'I' },
-]
+export type SidebarAgent = {
+  key: string
+  name: string
+  icon: string
+  unreadCount?: number
+}
 
 export default function Sidebar({
+  agents,
   activeAgent,
   onSelect,
 }: {
+  agents: SidebarAgent[]
   activeAgent: string
   onSelect: (agent: string) => void
 }) {
@@ -23,9 +20,9 @@ export default function Sidebar({
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
-    if (!term) return AGENTS
-    return AGENTS.filter((a) => a.name.toLowerCase().includes(term) || a.key.toLowerCase().includes(term))
-  }, [search])
+    if (!term) return agents
+    return agents.filter((a) => a.name.toLowerCase().includes(term) || a.key.toLowerCase().includes(term))
+  }, [search, agents])
 
   return (
     <aside className="w-72 bg-white border-r border-gray-200 flex flex-col agents-sidebar">
@@ -45,6 +42,7 @@ export default function Sidebar({
       <div className="agents-list" id="agentsList">
         {filtered.map((a) => {
           const isActive = activeAgent === a.key
+          const unreadCount = a.unreadCount ?? 0
           return (
             <button
               type="button"
@@ -56,6 +54,7 @@ export default function Sidebar({
               <div className={`agent-icon ${isActive ? '' : ''}`}>{a.icon}</div>
               <div className="agent-info">
                 <div className={`agent-name ${isActive ? '' : ''}`}>{a.name}</div>
+                {unreadCount > 0 && <span className="agent-unread-badge">{unreadCount}</span>}
               </div>
             </button>
           )

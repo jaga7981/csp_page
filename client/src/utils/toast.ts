@@ -1,7 +1,30 @@
 export type ToastType = 'success' | 'error' | 'info'
+type ToastPosition = 'top-right' | 'bottom-right'
 
-export function showToast(title: string, message: string, type: ToastType = 'info') {
-  const toastContainer = document.getElementById('toastContainer')
+type ToastOptions = {
+  type?: ToastType
+  position?: ToastPosition
+  duration?: number
+}
+
+export function showToast(title: string, message: string, typeOrOptions?: ToastType | ToastOptions, extraOptions?: ToastOptions) {
+  let type: ToastType = 'info'
+  let options: ToastOptions = {}
+
+  if (typeof typeOrOptions === 'string') {
+    type = typeOrOptions
+    options = extraOptions ?? {}
+  } else if (typeof typeOrOptions === 'object' && typeOrOptions !== null) {
+    options = typeOrOptions
+    if (typeOrOptions.type) {
+      type = typeOrOptions.type
+    }
+  }
+
+  const position: ToastPosition = options.position ?? 'top-right'
+  const duration = options.duration ?? (position === 'top-right' ? 4000 : 2000)
+  const containerId = position === 'bottom-right' ? 'toastContainerBottom' : 'toastContainerTop'
+  const toastContainer = document.getElementById(containerId)
   if (!toastContainer) return
 
   const toast = document.createElement('div')
@@ -26,7 +49,7 @@ export function showToast(title: string, message: string, type: ToastType = 'inf
   setTimeout(() => {
     toast.style.opacity = '0'
     setTimeout(() => toast.remove(), 300)
-  }, 3000)
+  }, duration)
 }
 
 export default showToast

@@ -1,12 +1,15 @@
 import React, { useState } from 'react'
 import Sidebar from './components/Sidebar'
+import type { SidebarAgent } from './components/Sidebar'
 import Header from './components/Header'
 import InboxView from './components/InboxView'
 import ThreadView from './components/ThreadView'
 import ComposeView from './components/ComposeView'
 import ToastContainer from './components/ToastContainer'
 import { showToast } from './utils/toast'
-import { downloadFile } from './utils/download'
+import DownloadDialog from './components/DownloadDialog'
+import { exportConversations, type ConversationExportFormat } from './utils/conversationExport'
+import type { DownloadScope } from './types/download'
 
 type Message = {
   id: number
@@ -23,28 +26,41 @@ type Thread = {
   unread?: number
 }
 
+type AgentConfig = { name: string; email: string; icon: string; webhook?: string }
+
+const AGENT_CONFIG: Record<string, AgentConfig> = {
+  vendor: {
+    name: 'Vendor',
+    icon: 'V',
+    email: 'vendor@merlion.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-vendor',
+  },
+  customs: { name: 'Customs Broker', icon: 'C', email: 'customs@clearance.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-customs' },
+  warehouse: { name: 'Warehouse Owners', icon: 'W', email: 'warehouse@storage.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-warehouse' },
+  port: { name: 'Port Owners', icon: 'P', email: 'port@harbor.gov', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-port' },
+  account: { name: 'Account Manager', icon: 'A', email: 'manager@mokabura.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-account' },
+  retail: { name: 'Retail Bots', icon: 'R', email: 'retail@shop.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-retail' },
+  influencer: { name: 'Influencer', icon: 'I', email: 'influencer@social.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-influencer' },
+}
+
+const DEFAULT_AGENT_ORDER = Object.keys(AGENT_CONFIG).sort((a, b) => AGENT_CONFIG[a].name.localeCompare(AGENT_CONFIG[b].name))
+
 export const App: React.FC = () => {
   const [activeAgent, setActiveAgent] = useState('vendor')
   const [view, setView] = useState<'inbox' | 'thread' | 'compose'>('inbox')
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
-
-  const AGENT_CONFIG: Record<string, { name: string; email: string; webhook?: string }> = {
-    vendor: { name: 'Vendor', 
-        email: 'vendor@merlion.com',
-        webhook: 'https://n8n.jagadeesh.shop/webhook/agent-vendor' },
-    customs: { name: 'Customs Broker', email: 'customs@clearance.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-customs' },
-    warehouse: { name: 'Warehouse Owners', email: 'warehouse@storage.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-warehouse' },
-    port: { name: 'Port Owners', email: 'port@harbor.gov', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-port' },
-    account: { name: 'Account Manager', email: 'manager@mokabura.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-account' },
-    retail: { name: 'Retail Bots', email: 'retail@shop.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-retail' },
-    influencer: { name: 'Influencer', email: 'influencer@social.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-influencer' },
-  }
 
   const [conversations, setConversations] = useState<Record<string, Record<string, Thread>>>(() => {
     const obj: Record<string, Record<string, Thread>> = {}
     Object.keys(AGENT_CONFIG).forEach((k) => (obj[k] = {}))
     return obj
   })
+  const [agentOrder, setAgentOrder] = useState<string[]>(DEFAULT_AGENT_ORDER)
+  const [threadFilter, setThreadFilter] = useState<'all' | 'unopened' | 'opened'>('all')
+  const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false)
+  const [downloadScope, setDownloadScope] = useState<DownloadScope>('single')
+  const [downloadFormat, setDownloadFormat] = useState<ConversationExportFormat>('txt')
+  const [downloadThreadChoice, setDownloadThreadChoice] = useState<string | null>(null)
 
   const PRESET_MESSAGES: Record<string, string> = {
     vendor:
@@ -60,6 +76,77 @@ export const App: React.FC = () => {
       "Hello Retail Team,\n\nI would like to discuss our product placement strategy for the upcoming season.\n\nBest regards,\nStudent",
     influencer:
       "Hello,\n\nI would like to explore potential collaboration opportunities for our brand promotion.\n\nBest regards,\nStudent",
+  }
+
+  const agentUnreadCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {}
+    Object.entries(conversations).forEach(([agentKey, threads]) => {
+      counts[agentKey] = Object.values(threads || {}).reduce((sum, thread) => sum + (thread.unread || 0), 0)
+    })
+    return counts
+  }, [conversations])
+
+  const orderedAgents: SidebarAgent[] = React.useMemo(
+    () =>
+      agentOrder.map((key) => ({
+        key,
+        name: AGENT_CONFIG[key].name,
+        icon: AGENT_CONFIG[key].icon,
+        unreadCount: agentUnreadCounts[key] || 0,
+      })),
+    [agentOrder, agentUnreadCounts]
+  )
+
+  const activeAgentThreads = conversations[activeAgent] || {}
+  const sortedThreadIds = React.useMemo(() => {
+    return Object.entries(activeAgentThreads)
+      .sort(([, aThread], [, bThread]) => {
+        const aDate = aThread?.messages[aThread.messages.length - 1]?.date ?? '0'
+        const bDate = bThread?.messages[bThread.messages.length - 1]?.date ?? '0'
+        return new Date(bDate).getTime() - new Date(aDate).getTime()
+      })
+      .map(([id]) => id)
+  }, [activeAgentThreads])
+
+  const threadOptions = React.useMemo(
+    () =>
+      sortedThreadIds.map((id) => ({
+        id,
+        subject: activeAgentThreads[id]?.subject || 'Untitled conversation',
+      })),
+    [sortedThreadIds, activeAgentThreads]
+  )
+
+  React.useEffect(() => {
+    setThreadFilter('all')
+  }, [activeAgent])
+
+  React.useEffect(() => {
+    setAgentOrder((prev) => {
+      const missing = DEFAULT_AGENT_ORDER.filter((key) => !prev.includes(key))
+      return missing.length ? [...prev, ...missing] : prev
+    })
+  }, [])
+
+  React.useEffect(() => {
+    if (downloadScope === 'all') {
+      setDownloadThreadChoice(null)
+      return
+    }
+    const firstThreadId = threadOptions[0]?.id ?? null
+    setDownloadThreadChoice((prev) => {
+      if (prev && activeAgentThreads[prev]) {
+        return prev
+      }
+      return firstThreadId
+    })
+  }, [downloadScope, activeAgentThreads, threadOptions])
+
+  function bumpAgentToTop(agentKey: string) {
+    setAgentOrder((prev) => {
+      const without = prev.filter((key) => key !== agentKey)
+      return [agentKey, ...without]
+    })
   }
 
   // BASE session ID generated once per app load (used when calling webhooks)
@@ -135,6 +222,7 @@ export const App: React.FC = () => {
   async function createThreadAndSend(subject: string, body: string) {
     const threadId = 'thread_' + Date.now().toString()
     const agent = activeAgent
+    const isThreadActive = view === 'thread' && selectedThreadId === threadId
     const userMessage: Message = {
       id: Date.now(),
       from: 'student@mokabura.com',
@@ -149,6 +237,7 @@ export const App: React.FC = () => {
       copy[agent] = { ...copy[agent], [threadId]: { subject, messages: [userMessage], unread: 0 } }
       return copy
     })
+    bumpAgentToTop(agent)
 
     showInbox()
 
@@ -167,15 +256,19 @@ export const App: React.FC = () => {
       if (!copy[agent][threadId]) {
         copy[agent][threadId] = { subject, messages: [], unread: 0 }
       }
-      copy[agent][threadId] = { ...copy[agent][threadId], messages: [...copy[agent][threadId].messages, agentReply], unread: (copy[agent][threadId].unread || 0) + 1 }
+      const currentThread = copy[agent][threadId]
+      const unreadCount = isThreadActive ? 0 : (currentThread.unread || 0) + 1
+      copy[agent][threadId] = { ...currentThread, messages: [...currentThread.messages, agentReply], unread: unreadCount }
       return copy
     })
+    bumpAgentToTop(agent)
   }
 
   async function sendReply(threadId: string, replyText: string) {
     showToast('Sending Reply', 'Your reply is being sent...', 'info')
     if (!replyText) return
     const agent = activeAgent
+    const isThreadActive = view === 'thread' && selectedThreadId === threadId
     const userReply: Message = {
       id: Date.now(),
       from: 'student@mokabura.com',
@@ -188,10 +281,11 @@ export const App: React.FC = () => {
     setConversations((prev) => {
       const copy = { ...prev }
       const thread = copy[agent][threadId]
-      thread.messages = [...thread.messages, userReply]
-      copy[agent] = { ...copy[agent], [threadId]: thread }
+      const updatedThread = { ...thread, messages: [...thread.messages, userReply] }
+      copy[agent] = { ...copy[agent], [threadId]: updatedThread }
       return copy
     })
+    bumpAgentToTop(agent)
 
     const reply = await sendToAgent(agent, 'Re: ' + (conversations[agent][threadId]?.subject || ''), replyText, threadId)
     const agentReply: Message = {
@@ -206,80 +300,115 @@ export const App: React.FC = () => {
     setConversations((prev) => {
       const copy = { ...prev }
       const thread = copy[agent][threadId]
-      thread.messages = [...thread.messages, agentReply]
-      thread.unread = (thread.unread || 0) + 1
-      copy[agent] = { ...copy[agent], [threadId]: thread }
+      const unreadCount = isThreadActive ? 0 : (thread.unread || 0) + 1
+      const updatedThread = { ...thread, messages: [...thread.messages, agentReply], unread: unreadCount }
+      copy[agent] = { ...copy[agent], [threadId]: updatedThread }
       return copy
     })
+    bumpAgentToTop(agent)
   }
 
-  function downloadThread(threadId: string) {
-    const thread = conversations[activeAgent][threadId]
-    if (!thread) return
-
-    let content = `Conversation Thread: ${thread.subject}\n`
-    content += `Agent: ${AGENT_CONFIG[activeAgent].name}\n`
-    content += `Downloaded: ${new Date().toLocaleString()}\n\n`
-    content += `${'='.repeat(60)}\n\n`
-
-    thread.messages.forEach((msg, index) => {
-      const sender = msg.isUser ? 'You' : AGENT_CONFIG[activeAgent].name
-      content += `Message ${index + 1} - ${sender}\n`
-      content += `Date: ${new Date(msg.date).toLocaleString()}\n`
-      content += `To: ${msg.to}\n\n`
-      content += `${msg.body}\n\n`
-      content += `${'-'.repeat(60)}\n\n`
-    })
-
-    downloadFile(content, `conversation_${AGENT_CONFIG[activeAgent].name}_${threadId}_${Date.now()}.txt`)
-    showToast('Downloaded', 'Conversation downloaded successfully', 'success')
+  function buildExportThreads(agentKey: string, threadIds: string[]) {
+    const threads = conversations[agentKey] || {}
+    return threadIds
+      .map((threadId, index) => {
+        const thread = threads[threadId]
+        if (!thread) return null
+        return {
+          id: threadId,
+          label: `Thread ${index + 1}`,
+          subject: thread.subject || `Thread ${index + 1}`,
+          messages: thread.messages.map((msg, messageIndex) => ({
+            order: messageIndex + 1,
+            direction: msg.isUser ? 'sent' : 'received',
+            author: msg.isUser ? 'You' : AGENT_CONFIG[agentKey].name,
+            body: msg.body,
+            date: msg.date,
+          })),
+        }
+      })
+      .filter(Boolean)
   }
 
-  function downloadAllConversations() {
-    const agentThreads = conversations[activeAgent]
-    const threadKeys = Object.keys(agentThreads)
-    if (threadKeys.length === 0) {
-      showToast('No Conversations', 'No conversations to download', 'error')
+  function showDownloadDialog(scope: DownloadScope, threadId?: string | null) {
+    if (threadOptions.length === 0) {
+      showToast('No Conversations', 'No conversations to download', { type: 'error', position: 'bottom-right', duration: 2200 })
+      return
+    }
+    setDownloadScope(scope)
+    if (scope === 'single') {
+      const fallback = threadId ?? selectedThreadId ?? threadOptions[0]?.id ?? null
+      setDownloadThreadChoice(fallback)
+    } else {
+      setDownloadThreadChoice(null)
+    }
+    setDownloadDialogOpen(true)
+  }
+
+  function handleDownloadConfirm() {
+    const targetThreadIds =
+      downloadScope === 'single'
+        ? downloadThreadChoice
+          ? [downloadThreadChoice]
+          : []
+        : sortedThreadIds
+
+    if (targetThreadIds.length === 0) {
+      showToast('Select Thread', 'Pick a thread to download', { type: 'error', position: 'bottom-right', duration: 2000 })
       return
     }
 
-    let content = `All Conversations with ${AGENT_CONFIG[activeAgent].name}\n`
-    content += `Downloaded: ${new Date().toLocaleString()}\n`
-    content += `Total Threads: ${threadKeys.length}\n\n`
-    content += `${'='.repeat(80)}\n\n`
+    const payloadThreads = buildExportThreads(activeAgent, targetThreadIds)
+    if (!payloadThreads.length) {
+      showToast('Unavailable', 'Unable to assemble the conversations', { type: 'error', position: 'bottom-right', duration: 2200 })
+      return
+    }
 
-    threadKeys.forEach((threadId, threadIndex) => {
-      const thread = agentThreads[threadId]
-      content += `\n${'#'.repeat(80)}\n`
-      content += `THREAD ${threadIndex + 1}: ${thread.subject}\n`
-      content += `${'#'.repeat(80)}\n\n`
+    const scopeLabel = downloadScope === 'single' ? 'Conversation of Selected Thread' : 'Conversations of All Threads'
 
-      thread.messages.forEach((msg, msgIndex) => {
-        const sender = msg.isUser ? 'You' : AGENT_CONFIG[activeAgent].name
-        content += `Message ${msgIndex + 1} - ${sender}\n`
-        content += `Date: ${new Date(msg.date).toLocaleString()}\n`
-        content += `To: ${msg.to}\n\n`
-        content += `${msg.body}\n\n`
-        content += `${'-'.repeat(60)}\n\n`
-      })
+    exportConversations(
+      {
+        agentName: AGENT_CONFIG[activeAgent].name,
+        scopeLabel,
+        threads: payloadThreads,
+      },
+      downloadFormat,
+      downloadScope === 'single'
+        ? `conversation_${AGENT_CONFIG[activeAgent].name}_${targetThreadIds[0]}`
+        : `all_conversations_${AGENT_CONFIG[activeAgent].name}`
+    )
+
+    showToast('Downloaded', `Conversation saved as ${downloadFormat.toUpperCase()}`, {
+      type: 'success',
+      position: 'bottom-right',
+      duration: 2500,
     })
-
-    downloadFile(content, `all_conversations_${AGENT_CONFIG[activeAgent].name}_${Date.now()}.txt`)
-    showToast('Downloaded', `All ${Object.keys(agentThreads).length} conversations downloaded`, 'success')
+    setDownloadDialogOpen(false)
   }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <ToastContainer />
       <div className="flex h-screen">
-        <Sidebar activeAgent={activeAgent} onSelect={(agent) => handleAgentSelect(agent)} />
+        <Sidebar agents={orderedAgents} activeAgent={activeAgent} onSelect={(agent) => handleAgentSelect(agent)} />
 
         <main className="flex-1 flex flex-col bg-white">
-          <Header title={title} onCompose={() => showCompose()} onDownloadAll={() => downloadAllConversations()} />
+          <Header
+            title={title}
+            downloadLabel={`📥 Download ${AGENT_CONFIG[activeAgent].name}`}
+            onCompose={() => showCompose()}
+            onDownload={() => showDownloadDialog('all')}
+          />
 
           <div className="flex-1 overflow-y-auto p-4">
             {view === 'inbox' && (
-              <InboxView agentKey={activeAgent} conversations={conversations} onOpenThread={(id: string) => openThread(id)} />
+              <InboxView
+                agentKey={activeAgent}
+                conversations={conversations}
+                filter={threadFilter}
+                onFilterChange={setThreadFilter}
+                onOpenThread={(id: string) => openThread(id)}
+              />
             )}
 
             {view === 'thread' && (
@@ -288,7 +417,6 @@ export const App: React.FC = () => {
                 threadId={selectedThreadId ?? undefined}
                 onBack={() => showInbox()}
                 onSendReply={(text: string) => selectedThreadId && sendReply(selectedThreadId, text)}
-                onDownloadThread={(id?: string) => id && downloadThread(id)}
               />
             )}
 
@@ -305,6 +433,18 @@ export const App: React.FC = () => {
           </div>
         </main>
       </div>
+      <DownloadDialog
+        isOpen={isDownloadDialogOpen}
+        scope={downloadScope}
+        format={downloadFormat}
+        threads={threadOptions}
+        selectedThreadId={downloadThreadChoice}
+        onScopeChange={setDownloadScope}
+        onFormatChange={setDownloadFormat}
+        onThreadChange={setDownloadThreadChoice}
+        onClose={() => setDownloadDialogOpen(false)}
+        onConfirm={handleDownloadConfirm}
+      />
     </div>
   )
 }

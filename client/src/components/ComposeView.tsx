@@ -285,7 +285,7 @@ export default function ComposeView({
     const next = [newDraft, ...savedDrafts].slice(0, 25)
     syncSavedDrafts(next)
     setIsDraftMenuOpen(false)
-    showToast('Draft Saved', 'Draft added to your saved list.', 'success')
+    showToast('Draft Saved', 'Draft added to your saved list.', { type: 'success', position: 'bottom-right', duration: 1600 })
   }
 
   function handleSelectDraft(draft: SavedDraft) {
@@ -298,7 +298,7 @@ export default function ComposeView({
     saveSelection()
     recordHistory()
     updateToolbarState()
-    showToast('Draft Loaded', 'Draft content restored.', 'info')
+    showToast('Draft Loaded', 'Draft content restored.', { type: 'info', position: 'bottom-right', duration: 1600 })
   }
 
   function toggleMaximize() {
@@ -342,18 +342,14 @@ export default function ComposeView({
     saveSelection()
     recordHistory()
     updateToolbarState()
-    showToast('Template Inserted', 'Autofill message added to the draft', 'info')
+    showToast('Template Inserted', 'Autofill message added to the draft', { type: 'info', position: 'bottom-right', duration: 1600 })
   }
 
-  const composeViewClasses = `compose-view mt-6 ${layoutMode === 'maximized' ? 'compose-view--max' : ''}`
+  const composeViewClasses = `compose-view ${layoutMode === 'maximized' ? 'compose-view--max' : ''}`
   const composeCardClasses = `compose-card ${layoutMode === 'maximized' ? 'compose-card--max' : ''}`
 
   return (
-    <div className={composeViewClasses} id="composeView">
-      <button className="mb-4 text-sm text-blue-600" id="backFromCompose" onClick={onBack}>
-        ← Back
-      </button>
-
+    <div className={composeViewClasses} id="composeView" style={{ marginTop: '-20px' }}>
       <div className={composeCardClasses}>
         <div className="compose-card-header">
           <span className="compose-card-title">New message</span>
