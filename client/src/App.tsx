@@ -45,6 +45,12 @@ const AGENT_CONFIG: Record<string, AgentConfig> = {
 
 const DEFAULT_AGENT_ORDER = Object.keys(AGENT_CONFIG).sort((a, b) => AGENT_CONFIG[a].name.localeCompare(AGENT_CONFIG[b].name))
 
+function isDuplicateAgentReply(thread: Thread | undefined, reply: Message) {
+  if (!thread) return false
+  const lastMessage = thread.messages[thread.messages.length - 1]
+  return !!(lastMessage && !lastMessage.isUser && lastMessage.body === reply.body)
+}
+
 export const App: React.FC = () => {
   const [activeAgent, setActiveAgent] = useState('vendor')
   const [view, setView] = useState<'inbox' | 'thread' | 'compose'>('inbox')
@@ -258,6 +264,9 @@ export const App: React.FC = () => {
       }
       const currentThread = copy[agent][threadId]
       const unreadCount = isThreadActive ? 0 : (currentThread.unread || 0) + 1
+      if (isDuplicateAgentReply(currentThread, agentReply)) {
+        return copy
+      }
       copy[agent][threadId] = { ...currentThread, messages: [...currentThread.messages, agentReply], unread: unreadCount }
       return copy
     })
@@ -301,6 +310,9 @@ export const App: React.FC = () => {
       const copy = { ...prev }
       const thread = copy[agent][threadId]
       const unreadCount = isThreadActive ? 0 : (thread.unread || 0) + 1
+      if (isDuplicateAgentReply(thread, agentReply)) {
+        return copy
+      }
       const updatedThread = { ...thread, messages: [...thread.messages, agentReply], unread: unreadCount }
       copy[agent] = { ...copy[agent], [threadId]: updatedThread }
       return copy
@@ -395,7 +407,7 @@ export const App: React.FC = () => {
         <main className="flex-1 flex flex-col bg-white">
           <Header
             title={title}
-            downloadLabel={`📥 Download ${AGENT_CONFIG[activeAgent].name}`}
+            downloadLabel="📥 Download Conversation"
             onCompose={() => showCompose()}
             onDownload={() => showDownloadDialog('all')}
           />
