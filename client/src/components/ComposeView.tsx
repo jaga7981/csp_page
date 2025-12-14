@@ -38,6 +38,8 @@ export default function ComposeView({
   agentKey,
   agentName,
   presetMessage,
+  messageCount,
+  limitReached,
   onBack,
   onSend,
 }: {
@@ -46,6 +48,8 @@ export default function ComposeView({
   agentKey?: string
   agentName?: string
   presetMessage?: string
+  messageCount?: number
+  limitReached?: boolean
   onBack: () => void
   onSend: (subject: string, body: string) => void
 }) {
@@ -84,7 +88,7 @@ export default function ComposeView({
         if (d.body && editorRef.current) editorRef.current.innerHTML = d.body
         setDraftExists(!!(d.body || d.subject))
       }
-    } catch (e) {}
+    } catch (e) { }
     resetHistory(editorRef.current?.innerHTML || '')
     saveSelection()
     draftBootstrappedRef.current = true
@@ -100,7 +104,7 @@ export default function ComposeView({
           setSavedDrafts(parsed)
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [])
 
   // Close draft dropdown when clicking outside
@@ -119,7 +123,7 @@ export default function ComposeView({
     setSavedDrafts(next)
     try {
       localStorage.setItem('saved_drafts', JSON.stringify(next))
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function filteredDrafts() {
@@ -134,7 +138,7 @@ export default function ComposeView({
     editor.focus()
     try {
       document.execCommand(command, false, undefined)
-    } catch (e) {}
+    } catch (e) { }
     saveSelection()
     recordHistory()
   }
@@ -147,7 +151,7 @@ export default function ComposeView({
     try {
       localStorage.setItem(`draft_${agentKey}`, JSON.stringify(data))
       setDraftExists(body.trim().length > 0 || subj.trim().length > 0)
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function updateToolbarState() {
@@ -159,7 +163,7 @@ export default function ComposeView({
         const isActive = document.queryCommandState(control.command)
         button.classList.toggle('active', !!isActive)
       })
-    } catch (e) {}
+    } catch (e) { }
     persistDraft()
   }
 
@@ -353,7 +357,13 @@ export default function ComposeView({
       <div className={composeCardClasses}>
         <div className="compose-card-header">
           <span className="compose-card-title">New message</span>
-          <div className="compose-window-controls">
+          <div className="compose-window-controls flex items-center gap-2">
+            {messageCount !== undefined && (
+              <span className={`text-xs font-medium px-2 py-1 rounded ${(messageCount || 0) >= 16 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                }`}>
+                {messageCount}/20
+              </span>
+            )}
             <button type="button" className="ghost-btn icon-btn" onClick={minimizeComposer} title="Minimize composer">
               ▭
             </button>
@@ -455,20 +465,33 @@ export default function ComposeView({
         </div>
 
         <div className="compose-body-wrapper">
-          <div
-            id="messageBody"
-            ref={editorRef}
-            contentEditable
-            suppressContentEditableWarning
-            data-placeholder="Type your message here..."
-            className="compose-body-editor"
-            aria-label="Message body"
-          />
+          {limitReached ? (
+            <div className="p-8 text-center text-gray-500 bg-gray-50 h-full flex flex-col items-center justify-center">
+              <p className="text-lg font-medium text-red-600 mb-2">Session Limit Reached</p>
+              <p>You have reached the maximum number of messages for this session.</p>
+              <p className="text-sm mt-2">Please download your chat history to continue.</p>
+            </div>
+          ) : (
+            <div
+              id="messageBody"
+              ref={editorRef}
+              contentEditable={!limitReached}
+              suppressContentEditableWarning
+              data-placeholder="Type your message here..."
+              className="compose-body-editor"
+              aria-label="Message body"
+            />
+          )}
         </div>
 
         <div className="compose-footer">
           <div className="compose-actions">
-            <button type="button" className="send-btn" onClick={handleSend}>
+            <button
+              type="button"
+              className={`send-btn ${limitReached ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={handleSend}
+              disabled={limitReached}
+            >
               Send
             </button>
             <button

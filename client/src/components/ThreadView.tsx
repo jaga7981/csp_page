@@ -35,11 +35,15 @@ const replyToolbarControls: ToolbarControl[] = [
 export default function ThreadView({
   thread,
   threadId,
+  messageCount,
+  limitReached,
   onBack,
   onSendReply,
 }: {
   thread?: Thread
   threadId?: string
+  messageCount?: number
+  limitReached?: boolean
   onBack: () => void
   onSendReply: (text: string) => void
 }) {
@@ -56,7 +60,7 @@ export default function ThreadView({
     editor.focus()
     try {
       document.execCommand(command, false, undefined)
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function updateToolbarState() {
@@ -68,7 +72,7 @@ export default function ThreadView({
         const isActive = document.queryCommandState(control.command)
         button.classList.toggle('active', !!isActive)
       })
-    } catch (e) {}
+    } catch (e) { }
   }
 
   React.useEffect(() => {
@@ -89,6 +93,12 @@ export default function ThreadView({
     <div className="thread-view mt-6" id="threadView">
       <div className="flex items-center justify-between mb-4">
         <button className="text-sm text-blue-600" id="backToInbox" onClick={onBack}>← Back to Inbox</button>
+        {messageCount !== undefined && (
+          <span className={`text-xs font-medium px-2 py-1 rounded ${(messageCount || 0) >= 16 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+            }`}>
+            {messageCount}/20 Messages
+          </span>
+        )}
       </div>
       <div className="mb-4">
         <div className="text-lg font-semibold mb-2">{thread.subject}</div>
@@ -96,7 +106,7 @@ export default function ThreadView({
 
       <div className="space-y-4">
         {thread.messages.map((email) => (
-          <div key={email.id} className={`${email.isUser ? 'bg-amber-50 ml-auto' : 'bg-gray-50'} p-4 rounded-md`}> 
+          <div key={email.id} className={`${email.isUser ? 'bg-amber-50 ml-auto' : 'bg-gray-50'} p-4 rounded-md`}>
             <div className="flex items-start justify-between">
               <div>
                 <div className="font-semibold">{email.isUser ? 'You' : 'Agent'}</div>
@@ -110,50 +120,60 @@ export default function ThreadView({
       </div>
 
       <div className="reply-box mt-6">
-        <div className="compose-toolbar mb-2" ref={toolbarRef}>
-          {replyToolbarControls.map((control) => (
-            <button
-              key={control.id}
-              type="button"
-              className="toolbar-btn"
-              data-command={control.command}
-              title={control.title}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                applyFormat(control.command)
-                updateToolbarState()
-              }}
-            >
-              {control.label}
-            </button>
-          ))}
-        </div>
-        <div
-          ref={editorRef}
-          contentEditable
-          className="compose-body-editor"
-          style={{ minHeight: 100 }}
-          aria-label="Reply editor"
-          data-placeholder="Type your reply..."
-          suppressContentEditableWarning
-        />
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            className="send-btn"
-            onClick={() => {
-              const val = editorRef.current?.textContent?.trim() || ''
-              if (!val) {
-                showToast('Empty Reply', 'Please type a reply', 'error')
-                return
-              }
-              onSendReply(val)
-              if (editorRef.current) editorRef.current.innerHTML = ''
-            }}
-          >
-            Send Reply
-          </button>
-        </div>
+        {limitReached ? (
+          <div className="p-6 text-center text-gray-500 bg-gray-50 rounded-md border border-gray-200">
+            <p className="text-lg font-medium text-red-600 mb-2">Session Limit Reached</p>
+            <p>You have reached the maximum number of messages for this session.</p>
+            <p className="text-sm mt-2">Please download your chat history to continue.</p>
+          </div>
+        ) : (
+          <>
+            <div className="compose-toolbar mb-2" ref={toolbarRef}>
+              {replyToolbarControls.map((control) => (
+                <button
+                  key={control.id}
+                  type="button"
+                  className="toolbar-btn"
+                  data-command={control.command}
+                  title={control.title}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    applyFormat(control.command)
+                    updateToolbarState()
+                  }}
+                >
+                  {control.label}
+                </button>
+              ))}
+            </div>
+            <div
+              ref={editorRef}
+              contentEditable
+              className="compose-body-editor"
+              style={{ minHeight: 100 }}
+              aria-label="Reply editor"
+              data-placeholder="Type your reply..."
+              suppressContentEditableWarning
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                className="send-btn"
+                onClick={() => {
+                  const val = editorRef.current?.textContent?.trim() || ''
+                  if (!val) {
+                    showToast('Empty Reply', 'Please type a reply', 'error')
+                    return
+                  }
+                  onSendReply(val)
+                  if (editorRef.current) editorRef.current.innerHTML = ''
+                }}
+              >
+                Send Reply
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

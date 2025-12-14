@@ -33,7 +33,7 @@ const AGENT_CONFIG: Record<string, AgentConfig> = {
     name: 'Vendor',
     icon: 'V',
     email: 'vendor@merlion.com',
-    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-vendor',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/vendor-agent',
   },
   customs: { name: 'Customs Broker', icon: 'C', email: 'customs@clearance.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-customs' },
   warehouse: { name: 'Warehouse Owners', icon: 'W', email: 'warehouse@storage.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-warehouse' },
@@ -155,12 +155,21 @@ export const App: React.FC = () => {
     })
   }
 
-  // BASE session ID generated once per app load (used when calling webhooks)
-  const BASE_SESSION_ID = React.useMemo(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, [])
+  // Session Management
+  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({})
+  const [limitReached, setLimitReached] = useState<Record<string, boolean>>({})
 
-  function getSessionId(agentKey: string) {
-    return `${BASE_SESSION_ID}_${agentKey}`
-  }
+  // Initialize sessions on mount
+  React.useEffect(() => {
+    const sessions: Record<string, string> = {}
+    Object.keys(AGENT_CONFIG).forEach(agent => {
+      // Generate new session on every refresh (do not store in localStorage)
+      const newSession = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      sessions[agent] = newSession
+    })
+    setAgentSessions(sessions)
+  }, [])
 
   const title = `${AGENT_CONFIG[activeAgent].name} - ${view === 'inbox' ? 'Inbox' : view === 'compose' ? 'Compose' : 'Thread'}`
 
@@ -183,6 +192,10 @@ export const App: React.FC = () => {
   }
 
   function showCompose() {
+    if (limitReached[activeAgent]) {
+      showToast('Limit Reached', 'You have reached the message limit for this session.', 'error')
+      return
+    }
     setView('compose')
   }
 
@@ -194,35 +207,59 @@ export const App: React.FC = () => {
 
   async function sendToAgent(agentKey: string, subject: string, body: string, threadId?: string) {
     const webhook = AGENT_CONFIG[agentKey].webhook
-    showToast('Sending', 'Your message is being sent...', 'info')
-    try {
-      if (webhook) {
-        const res = await fetch(webhook, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            from: 'student@mokabura.com',
-            to: AGENT_CONFIG[agentKey].email,
-            subject,
-            message: body,
-            session_id: getSessionId(agentKey),
-          }),
-        })
+    const sessionId = agentSessions[agentKey]
 
-        if (!res.ok) {
-          const txt = await res.text().catch(() => '')
-          throw new Error(`HTTP ${res.status} ${res.statusText} ${txt}`)
-        }
-
-        const data = await res.json().catch(() => ({}))
-        showToast('Message Received', `${AGENT_CONFIG[agentKey].name} has replied`, 'success')
-        return data.reply || 'No response'
-      }
-    } catch (e: any) {
-      console.warn('Webhook error', e)
-      showToast('Send Failed', `Failed to send message: ${e?.message || e}`, 'error')
+    if (limitReached[agentKey]) {
+      showToast('Limit Reached', 'Please download your chat history.', 'error')
+      return 'Session Limit Reached'
     }
-    return `Auto-reply from ${AGENT_CONFIG[agentKey].name}`
+
+    showToast('Sending', 'Your message is being sent...', 'info')
+
+    try {
+      // Call local server
+      const res = await fetch('http://localhost:4000/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          body,
+          sessionId,
+          agentId: agentKey,
+          webhookUrl: webhook,
+          from: 'student@mokabura.com',
+          to: AGENT_CONFIG[agentKey].email,
+          subject,
+        }),
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        if (res.status === 403 && errorData.code === 'LIMIT_REACHED') {
+          setLimitReached(prev => ({ ...prev, [agentKey]: true }))
+          showToast('Limit Reached', 'You have reached the maximum number of messages.', 'error')
+          return 'Session Limit Reached. Please download chat.'
+        }
+        throw new Error(errorData.error || res.statusText)
+      }
+
+      const data = await res.json()
+
+      // Update message count
+      if (data.messageCount) {
+        setMessageCounts(prev => ({ ...prev, [agentKey]: data.messageCount }))
+        if (data.messageCount >= 20) { // 10 sets * 2
+          setLimitReached(prev => ({ ...prev, [agentKey]: true }))
+        }
+      }
+
+      showToast('Message Received', `${AGENT_CONFIG[agentKey].name} has replied`, 'success')
+      return data.response || 'No response'
+
+    } catch (e: any) {
+      console.warn('API error', e)
+      showToast('Send Failed', `Failed to send message: ${e?.message || e}`, 'error')
+      return 'Error communicating with agent.'
+    }
   }
 
   async function createThreadAndSend(subject: string, body: string) {
@@ -332,14 +369,14 @@ export const App: React.FC = () => {
           subject: thread.subject || `Thread ${index + 1}`,
           messages: thread.messages.map((msg, messageIndex) => ({
             order: messageIndex + 1,
-            direction: msg.isUser ? 'sent' : 'received',
+            direction: (msg.isUser ? 'sent' : 'received') as 'sent' | 'received',
             author: msg.isUser ? 'You' : AGENT_CONFIG[agentKey].name,
             body: msg.body,
             date: msg.date,
           })),
         }
       })
-      .filter(Boolean)
+      .filter((t): t is NonNullable<typeof t> => !!t)
   }
 
   function showDownloadDialog(scope: DownloadScope, threadId?: string | null) {
@@ -427,20 +464,24 @@ export const App: React.FC = () => {
               <ThreadView
                 thread={selectedThreadId ? conversations[activeAgent][selectedThreadId] : undefined}
                 threadId={selectedThreadId ?? undefined}
+                messageCount={messageCounts[activeAgent]}
+                limitReached={limitReached[activeAgent]}
                 onBack={() => showInbox()}
                 onSendReply={(text: string) => selectedThreadId && sendReply(selectedThreadId, text)}
               />
             )}
 
             {view === 'compose' && (
-                <ComposeView
-                  toEmail={AGENT_CONFIG[activeAgent].email}
-                  agentKey={activeAgent}
-                  agentName={AGENT_CONFIG[activeAgent].name}
-                  presetMessage={PRESET_MESSAGES[activeAgent]}
-                  onBack={() => showInbox()}
-                  onSend={(subject: string, body: string) => createThreadAndSend(subject, body)}
-                />
+              <ComposeView
+                toEmail={AGENT_CONFIG[activeAgent].email}
+                agentKey={activeAgent}
+                agentName={AGENT_CONFIG[activeAgent].name}
+                presetMessage={PRESET_MESSAGES[activeAgent]}
+                messageCount={messageCounts[activeAgent]}
+                limitReached={limitReached[activeAgent]}
+                onBack={() => showInbox()}
+                onSend={(subject: string, body: string) => createThreadAndSend(subject, body)}
+              />
             )}
           </div>
         </main>
