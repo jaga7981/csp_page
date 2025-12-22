@@ -7,8 +7,10 @@ interface IMessage {
 }
 
 export interface IConversation extends Document {
-    sessionId: string;
-    agentId: string;
+    userId: string;
+    agentType: string;
+    threadId: string;    // New: Unique ID for the thread
+    subject: string;     // New: Subject of the thread
     createdAt: Date;
     updatedAt: Date;
     messages: IMessage[];
@@ -22,8 +24,10 @@ const messageSchema = new Schema<IMessage>({
 }, { _id: false });
 
 const conversationSchema = new Schema<IConversation>({
-    sessionId: { type: String, required: true, index: true },
-    agentId: { type: String, required: true, index: true },
+    userId: { type: String, required: true, index: true },
+    agentType: { type: String, required: true, index: true },
+    threadId: { type: String, required: true, unique: true }, // Unique per thread
+    subject: { type: String, required: false, default: 'New Conversation' },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     messages: [messageSchema],
@@ -35,5 +39,8 @@ conversationSchema.pre('save', function (next) {
     this.updatedAt = new Date();
     next();
 });
+
+// Index for efficient querying by user and agent (not unique anymore, many threads allowed)
+conversationSchema.index({ userId: 1, agentType: 1 });
 
 export const Conversation = model<IConversation>('Conversation', conversationSchema);

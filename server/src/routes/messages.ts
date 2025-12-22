@@ -6,30 +6,21 @@ const router = Router()
 // Send message endpoint
 router.post('/send', async (req, res) => {
   try {
-    const { body, sessionId, agentId, webhookUrl } = req.body
+    const { body, userId, agentType, webhookUrl, threadId, subject } = req.body
 
-    if (!sessionId || !agentId) {
-      return res.status(400).json({ ok: false, error: 'sessionId and agentId are required' })
+    if (!userId || !agentType || !threadId) {
+      return res.status(400).json({ ok: false, error: 'userId, agentType, and threadId are required' })
     }
 
-    // 1. Find or Create Conversation
-    let conversation = await Conversation.findOne({ sessionId, agentId })
+    // 1. Find or Create Conversation by Thread ID
+    let conversation = await Conversation.findOne({ threadId })
     if (!conversation) {
       conversation = new Conversation({
-        sessionId,
-        agentId,
+        userId,
+        agentType,
+        threadId,
+        subject: subject || 'New Conversation',
         messages: []
-      })
-    }
-
-    // --- LIMIT CHECK ---
-    // Limit is 10 sets. 1 Set = 2 messages (User + Assistant). Total 20 messages.
-    if (conversation.messages.length >= 20) {
-      return res.status(403).json({
-        ok: false,
-        error: 'Session Limit Reached',
-        code: 'LIMIT_REACHED',
-        messageCount: conversation.messages.length
       })
     }
 
@@ -40,25 +31,10 @@ router.post('/send', async (req, res) => {
       timestamp: new Date()
     })
 
-    // Save immediately to persist user message
-    await conversation.save()
-
-    // 3. Prepare History for n8n (Last 10 messages EXCLUDING the current one)
-    // Format as a string for LLM context
-    const historyArray = conversation.messages.slice(0, -1).slice(-10)
-    const conversation_history = historyArray.map(m => {
-      const role = m.role === 'user' ? 'User' : 'Agent'
-      return `${role}: ${m.content}`
-    }).join('\n')
-
-    console.log(`[DEBUG] Session: ${sessionId}, History Length: ${historyArray.length}`)
-
-    // 4. Send to n8n
-    // Use the webhookUrl passed from client (specific to agent) OR fallback to env
+    // 3. Send to n8n (Only current message + userId)
     const n8nUrl = webhookUrl || process.env.N8N_WEBHOOK_URL
 
     if (!n8nUrl) {
-      // If no URL, just echo back for testing
       console.warn('N8N_WEBHOOK_URL not configured, echoing back')
       const echoResponse = `Echo: ${body}`
       conversation.messages.push({
@@ -74,7 +50,7 @@ router.post('/send', async (req, res) => {
       })
     }
 
-    console.log(`[DEBUG] Sending to n8n URL: ${n8nUrl}`)
+    console.log(`[DEBUG] Sending to n8n URL: ${n8nUrl} for User: ${userId}`)
 
     let response;
     try {
@@ -83,9 +59,7 @@ router.post('/send', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_message: body,
-          sessionId,
-          agentId,
-          conversation_history
+          userId,
         })
       })
     } catch (fetchError: any) {
@@ -94,20 +68,40 @@ router.post('/send', async (req, res) => {
     }
 
     if (!response.ok) {
+      // Fallback: If n8n errors, still save user message but maybe add error message as assistant?
+      // For now, throw to let frontend handle 'error' state, but user message IS saved above? 
+      // Actually, we haven't saved 'conversation' yet.
+      // Let's NOT save the user message if n8n fails hard, so user can retry?
+      // Or save it and say "Error"? 
+      // Going with throw for now.
       const errorText = await response.text()
       console.error(`[ERROR] n8n returned ${response.status}: ${errorText}`)
       throw new Error(`n8n error ${response.status}: ${errorText}`)
     }
 
-    const data = await response.json()
+    let data;
+    try {
+      const text = await response.text();
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.warn('[WARN] N8N response was not JSON:', text.substring(0, 100));
+        data = { output: text };
+      }
+    } catch (readError: any) {
+      console.error('[ERROR] Failed to read response text:', readError);
+      throw new Error('Failed to read response from N8N');
+    }
+
     const agentText = data.output || data.text || data.message || JSON.stringify(data)
 
-    // 5. Save Agent Response
+    // 4. Save Agent Response
     conversation.messages.push({
       role: 'assistant',
       content: agentText,
       timestamp: new Date()
     })
+
     await conversation.save()
 
     res.json({
@@ -121,24 +115,57 @@ router.post('/send', async (req, res) => {
   }
 })
 
-// Get history endpoint
+// Get history endpoint (Returns all threads for a user/agent)
 router.get('/', async (req, res) => {
   try {
-    const { sessionId, agentId } = req.query
+    const { userId, agentType } = req.query
 
-    if (!sessionId || !agentId) {
-      return res.status(400).json({ ok: false, error: 'sessionId and agentId are required' })
+    if (!userId || !agentType) {
+      return res.status(400).json({ ok: false, error: 'userId and agentType are required' })
     }
 
-    const conversation = await Conversation.findOne({
-      sessionId: sessionId as string,
-      agentId: agentId as string
-    })
+    // Find ALL conversations for this user + agent
+    const conversations = await Conversation.find({
+      userId: userId as string,
+      agentType: agentType as string
+    }).sort({ updatedAt: -1 }) // Sort by newest first
 
-    // Return messages or empty array if no conversation yet
-    res.json({ ok: true, conversations: conversation ? conversation.messages : [] })
+    // Return array of conversation objects
+    res.json({
+      ok: true,
+      conversations: conversations.map(c => ({
+        threadId: c.threadId,
+        subject: c.subject,
+        messages: c.messages,
+        updatedAt: c.updatedAt
+      }))
+    })
   } catch (error: any) {
     console.error('Error in GET /:', error)
+    res.status(500).json({ ok: false, error: error.message })
+  }
+})
+
+// Clear chat endpoint
+router.delete('/clear', async (req, res) => {
+  try {
+    const { userId, agentType, threadId } = req.body
+
+    if (!userId || !agentType) {
+      return res.status(400).json({ ok: false, error: 'userId and agentType are required' })
+    }
+
+    if (threadId) {
+      // Clear specific thread
+      await Conversation.deleteOne({ userId, agentType, threadId })
+    } else {
+      // Clear ALL history for this agent
+      await Conversation.deleteMany({ userId, agentType })
+    }
+
+    res.json({ ok: true, message: 'Chat cleared successfully' })
+  } catch (error: any) {
+    console.error('Error in DELETE /clear:', error)
     res.status(500).json({ ok: false, error: error.message })
   }
 })

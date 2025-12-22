@@ -1,0 +1,13 @@
+{
+    "name": "csp-page-root",
+    "version": "1.0.0",
+    "description": "Root orchestration for CSP Page",
+    "scripts": {
+        "dev": "concurrently \"npm.cmd run dev --prefix server\" \"npm.cmd run dev --prefix client\"",
+        "start": "concurrently \"npm.cmd run start --prefix server\" \"npm.cmd run start --prefix client\"",
+        "install-all": "npm.cmd install && npm.cmd install --prefix client && npm.cmd install --prefix server"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.0"
+    }
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import Sidebar from './components/Sidebar'
 import type { SidebarAgent } from './components/Sidebar'
 import Header from './components/Header'
@@ -10,6 +11,9 @@ import { showToast } from './utils/toast'
 import DownloadDialog from './components/DownloadDialog'
 import { exportConversations, type ConversationExportFormat } from './utils/conversationExport'
 import type { DownloadScope } from './types/download'
+import { useAuth } from './context/AuthContext'
+import Login from './pages/Login'
+import Signup from './pages/Signup'
 
 type Message = {
   id: number
@@ -35,12 +39,39 @@ const AGENT_CONFIG: Record<string, AgentConfig> = {
     email: 'vendor@merlion.com',
     webhook: 'https://n8n.jagadeesh.shop/webhook/vendor-agent',
   },
-  customs: { name: 'Customs Broker', icon: 'C', email: 'customs@clearance.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-customs' },
-  warehouse: { name: 'Warehouse Owners', icon: 'W', email: 'warehouse@storage.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-warehouse' },
-  port: { name: 'Port Owners', icon: 'P', email: 'port@harbor.gov', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-port' },
-  account: { name: 'Account Manager', icon: 'A', email: 'manager@mokabura.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-account' },
-  retail: { name: 'Retail Bots', icon: 'R', email: 'retail@shop.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-retail' },
-  influencer: { name: 'Influencer', icon: 'I', email: 'influencer@social.com', webhook: 'https://n8n.jagadeesh.shop/webhook/agent-influencer' },
+  customs: {
+    name: 'Customs Broker',
+    icon: 'C', email: 'customs@clearance.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-customs'
+  },
+  warehouse: {
+    name: 'Warehouse Owners',
+    icon: 'W',
+    email: 'warehouse@storage.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-warehouse'
+  },
+  port: {
+    name: 'Port Owners',
+    icon: 'P', email: 'port@harbor.gov',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-port'
+  },
+  account: {
+    name: 'Account Manager',
+    icon: 'A', email: 'manager@mokabura.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-account'
+  },
+  retail: {
+    name: 'Retail Bots',
+    icon: 'R',
+    email: 'retail@shop.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-retail'
+  },
+  influencer: {
+    name: 'Influencer',
+    icon: 'I',
+    email: 'influencer@social.com',
+    webhook: 'https://n8n.jagadeesh.shop/webhook/agent-influencer'
+  },
 }
 
 const DEFAULT_AGENT_ORDER = Object.keys(AGENT_CONFIG).sort((a, b) => AGENT_CONFIG[a].name.localeCompare(AGENT_CONFIG[b].name))
@@ -51,7 +82,8 @@ function isDuplicateAgentReply(thread: Thread | undefined, reply: Message) {
   return !!(lastMessage && !lastMessage.isUser && lastMessage.body === reply.body)
 }
 
-export const App: React.FC = () => {
+const Dashboard: React.FC = () => {
+  const { logout, user } = useAuth()
   const [activeAgent, setActiveAgent] = useState('vendor')
   const [view, setView] = useState<'inbox' | 'thread' | 'compose'>('inbox')
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
@@ -68,6 +100,10 @@ export const App: React.FC = () => {
   const [downloadFormat, setDownloadFormat] = useState<ConversationExportFormat>('txt')
   const [downloadThreadChoice, setDownloadThreadChoice] = useState<string | null>(null)
 
+  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({})
+  const [limitReached, setLimitReached] = useState<Record<string, boolean>>({})
+  const [isSending, setIsSending] = useState(false)
+
   const PRESET_MESSAGES: Record<string, string> = {
     vendor:
       "Dear Vendor,\n\nI hope this message finds you well. I am writing to inquire about your product catalog and current pricing. Could you please share the latest information?\n\nBest regards,\nStudent",
@@ -83,6 +119,68 @@ export const App: React.FC = () => {
     influencer:
       "Hello,\n\nI would like to explore potential collaboration opportunities for our brand promotion.\n\nBest regards,\nStudent",
   }
+
+  // --- PERSISTENCE: Fetch History (Multiple Threads) ---
+  React.useEffect(() => {
+    if (!user?.email) return
+
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`http://localhost:4000/api/messages?userId=${user.email}&agentType=${activeAgent}`)
+        if (res.ok) {
+          const data = await res.json()
+
+          if (data.conversations && Array.isArray(data.conversations)) {
+            const backendThreads = data.conversations
+
+            // Reconstruct frontend conversation map
+            const threadMap: Record<string, Thread> = {}
+            let totalMessageCount = 0
+
+            backendThreads.forEach((bThread: any) => {
+              const msgs: Message[] = bThread.messages.map((msg: any, idx: number) => ({
+                id: new Date(msg.timestamp).getTime() + idx, // Simple ID gen
+                from: msg.role === 'user' ? (user.email || 'student@mokabura.com') : AGENT_CONFIG[activeAgent].email,
+                to: msg.role === 'user' ? AGENT_CONFIG[activeAgent].email : (user.email || 'student@mokabura.com'),
+                body: msg.content,
+                date: msg.timestamp,
+                isUser: msg.role === 'user'
+              }))
+
+              threadMap[bThread.threadId] = {
+                subject: bThread.subject || 'Previous Conversation',
+                messages: msgs,
+                unread: 0 // Default to read on fresh load? Or persist unread?
+              }
+              totalMessageCount += msgs.length
+            })
+
+            // Update state with reconstructed threads
+            setConversations(prev => ({
+              ...prev,
+              [activeAgent]: threadMap
+            }))
+
+            // Update limits (global limit per agent? or per thread? assuming per session/agent for now)
+            setMessageCounts(prev => ({ ...prev, [activeAgent]: totalMessageCount }))
+            // Note: Limit checking logic might need refinement if limits are per-thread vs per-agent
+            // Current backend logic was checking inside POST /send, but we removed it there? 
+            // Actually backend code for limit check was removed effectively (commented out).
+            // Frontend still checks logic below.
+            if (totalMessageCount >= 20) {
+              setLimitReached(prev => ({ ...prev, [activeAgent]: true }))
+            } else {
+              setLimitReached(prev => ({ ...prev, [activeAgent]: false }))
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch history', err)
+      }
+    }
+
+    fetchHistory()
+  }, [activeAgent, user?.email])
 
   const agentUnreadCounts = React.useMemo(() => {
     const counts: Record<string, number> = {}
@@ -155,22 +253,6 @@ export const App: React.FC = () => {
     })
   }
 
-  // Session Management
-  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
-  const [messageCounts, setMessageCounts] = useState<Record<string, number>>({})
-  const [limitReached, setLimitReached] = useState<Record<string, boolean>>({})
-
-  // Initialize sessions on mount
-  React.useEffect(() => {
-    const sessions: Record<string, string> = {}
-    Object.keys(AGENT_CONFIG).forEach(agent => {
-      // Generate new session on every refresh (do not store in localStorage)
-      const newSession = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      sessions[agent] = newSession
-    })
-    setAgentSessions(sessions)
-  }, [])
-
   const title = `${AGENT_CONFIG[activeAgent].name} - ${view === 'inbox' ? 'Inbox' : view === 'compose' ? 'Compose' : 'Thread'}`
 
   function showInbox() {
@@ -181,7 +263,6 @@ export const App: React.FC = () => {
   function openThread(threadId: string) {
     setSelectedThreadId(threadId)
     setView('thread')
-    // clear unread for that thread
     setConversations((prev) => {
       const copy = { ...prev }
       if (copy[activeAgent] && copy[activeAgent][threadId]) {
@@ -205,30 +286,54 @@ export const App: React.FC = () => {
     setView('inbox')
   }
 
-  async function sendToAgent(agentKey: string, subject: string, body: string, threadId?: string) {
+  // --- CLEAR CHAT ---
+  async function clearChat() {
+    if (!user?.email) return
+    if (!confirm('Are you sure you want to clear the chat history for this agent?')) return
+
+    try {
+      // Clear ALL history for agent (pass only userId and agentType)
+      const res = await fetch('http://localhost:4000/api/messages/clear', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.email, agentType: activeAgent })
+      })
+      if (!res.ok) throw new Error('Failed to clear')
+
+      // Clear local state
+      setConversations(prev => ({
+        ...prev,
+        [activeAgent]: {}
+      }))
+      setLimitReached(prev => ({ ...prev, [activeAgent]: false }))
+      setMessageCounts(prev => ({ ...prev, [activeAgent]: 0 }))
+      showToast('Chat Cleared', 'Conversation history has been deleted.', 'success')
+      showInbox()
+    } catch (e) {
+      console.error(e)
+      showToast('Error', 'Failed to clear chat', 'error')
+    }
+  }
+
+  async function sendToAgent(agentKey: string, subject: string, body: string, threadId: string) {
     const webhook = AGENT_CONFIG[agentKey].webhook
-    const sessionId = agentSessions[agentKey]
 
     if (limitReached[agentKey]) {
       showToast('Limit Reached', 'Please download your chat history.', 'error')
-      return 'Session Limit Reached'
+      return { ok: false, response: 'Session Limit Reached' }
     }
 
-    showToast('Sending', 'Your message is being sent...', 'info')
-
     try {
-      // Call local server
       const res = await fetch('http://localhost:4000/api/messages/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           body,
-          sessionId,
-          agentId: agentKey,
+          userId: user?.email,
+          agentType: agentKey,
+          threadId, // Pass threadId
+          subject,  // Pass subject
           webhookUrl: webhook,
-          from: 'student@mokabura.com',
-          to: AGENT_CONFIG[agentKey].email,
-          subject,
         }),
       })
 
@@ -237,44 +342,57 @@ export const App: React.FC = () => {
         if (res.status === 403 && errorData.code === 'LIMIT_REACHED') {
           setLimitReached(prev => ({ ...prev, [agentKey]: true }))
           showToast('Limit Reached', 'You have reached the maximum number of messages.', 'error')
-          return 'Session Limit Reached. Please download chat.'
+          return { ok: false, response: 'Limit Reached' }
         }
         throw new Error(errorData.error || res.statusText)
       }
 
       const data = await res.json()
 
-      // Update message count
       if (data.messageCount) {
         setMessageCounts(prev => ({ ...prev, [agentKey]: data.messageCount }))
-        if (data.messageCount >= 20) { // 10 sets * 2
+        if (data.messageCount >= 20) {
           setLimitReached(prev => ({ ...prev, [agentKey]: true }))
         }
       }
 
       showToast('Message Received', `${AGENT_CONFIG[agentKey].name} has replied`, 'success')
-      return data.response || 'No response'
+      return { ok: true, response: data.response || 'No response' }
 
     } catch (e: any) {
       console.warn('API error', e)
       showToast('Send Failed', `Failed to send message: ${e?.message || e}`, 'error')
-      return 'Error communicating with agent.'
+      return { ok: false, response: 'Error communicating with agent.' }
     }
   }
 
+
+
+  // Helper to prevent duplicate agent replies if backend sends multiple times
+  const isDuplicateAgentReply = (thread: Thread, newReply: Message) => {
+    const lastMessage = thread.messages[thread.messages.length - 1]
+    return lastMessage && !lastMessage.isUser && lastMessage.body === newReply.body && lastMessage.date === newReply.date
+  }
+
+  // --- CREATE NEW THREAD ---
   async function createThreadAndSend(subject: string, body: string) {
+    if (isSending) return
+    setIsSending(true)
+
     const threadId = 'thread_' + Date.now().toString()
     const agent = activeAgent
     const isThreadActive = view === 'thread' && selectedThreadId === threadId
+
     const userMessage: Message = {
       id: Date.now(),
-      from: 'student@mokabura.com',
+      from: user?.email || 'student@mokabura.com',
       to: AGENT_CONFIG[agent].email,
       body,
       date: new Date().toISOString(),
       isUser: true,
     }
 
+    // Speculatively add thread to UI
     setConversations((prev) => {
       const copy = { ...prev }
       copy[agent] = { ...copy[agent], [threadId]: { subject, messages: [userMessage], unread: 0 } }
@@ -283,47 +401,65 @@ export const App: React.FC = () => {
     bumpAgentToTop(agent)
 
     showInbox()
+    showToast('Sending', 'Your message is being sent...', 'info')
 
-    const reply = await sendToAgent(agent, subject, body, threadId)
-    const agentReply: Message = {
-      id: Date.now() + 1,
-      from: AGENT_CONFIG[agent].email,
-      to: 'student@mokabura.com',
-      body: reply,
-      date: new Date().toISOString(),
-      isUser: false,
-    }
+    try {
+      // Call backend
+      const result = await sendToAgent(agent, subject, body, threadId)
 
-    setConversations((prev) => {
-      const copy = { ...prev }
-      if (!copy[agent][threadId]) {
-        copy[agent][threadId] = { subject, messages: [], unread: 0 }
+      // Add reply to UI
+      const agentReply: Message = {
+        id: Date.now() + 1,
+        from: AGENT_CONFIG[agent].email,
+        to: user?.email || 'student@mokabura.com',
+        body: result.ok ? (result.response as string) : "Error: Failed to get response.", // Handle error output cleanly
+        date: new Date().toISOString(),
+        isUser: false,
       }
-      const currentThread = copy[agent][threadId]
-      const unreadCount = isThreadActive ? 0 : (currentThread.unread || 0) + 1
-      if (isDuplicateAgentReply(currentThread, agentReply)) {
+
+      setConversations((prev) => {
+        const copy = { ...prev }
+        if (!copy[agent][threadId]) {
+          // Edge case: thread deleted while sending? Restore it partially or just recreate
+          copy[agent][threadId] = { subject, messages: [], unread: 0 }
+        }
+        const currentThread = copy[agent][threadId]
+        const unreadCount = isThreadActive ? 0 : (currentThread.unread || 0) + 1
+
+        // Prevent duplicates
+        if (isDuplicateAgentReply(currentThread, agentReply)) {
+          return copy
+        }
+        copy[agent][threadId] = { ...currentThread, messages: [...currentThread.messages, agentReply], unread: unreadCount }
         return copy
-      }
-      copy[agent][threadId] = { ...currentThread, messages: [...currentThread.messages, agentReply], unread: unreadCount }
-      return copy
-    })
-    bumpAgentToTop(agent)
+      })
+      bumpAgentToTop(agent)
+    } finally {
+      setIsSending(false)
+    }
   }
 
+  // --- REPLY TO THREAD ---
   async function sendReply(threadId: string, replyText: string) {
-    showToast('Sending Reply', 'Your reply is being sent...', 'info')
+    if (isSending) return
     if (!replyText) return
+
+    setIsSending(true)
+    showToast('Sending Reply', 'Your reply is being sent...', 'info')
+
     const agent = activeAgent
     const isThreadActive = view === 'thread' && selectedThreadId === threadId
+
     const userReply: Message = {
       id: Date.now(),
-      from: 'student@mokabura.com',
+      from: user?.email || 'student@mokabura.com',
       to: AGENT_CONFIG[agent].email,
       body: replyText,
       date: new Date().toISOString(),
       isUser: true,
     }
 
+    // Speculatively add user message
     setConversations((prev) => {
       const copy = { ...prev }
       const thread = copy[agent][threadId]
@@ -333,65 +469,37 @@ export const App: React.FC = () => {
     })
     bumpAgentToTop(agent)
 
-    const reply = await sendToAgent(agent, 'Re: ' + (conversations[agent][threadId]?.subject || ''), replyText, threadId)
-    const agentReply: Message = {
-      id: Date.now() + 1,
-      from: AGENT_CONFIG[agent].email,
-      to: 'student@mokabura.com',
-      body: reply,
-      date: new Date().toISOString(),
-      isUser: false,
-    }
+    try {
+      // Call backend using existing threadId and subject
+      const subject = conversations[agent][threadId]?.subject || 'Conversation'
+      const result = await sendToAgent(agent, subject, replyText, threadId)
 
-    setConversations((prev) => {
-      const copy = { ...prev }
-      const thread = copy[agent][threadId]
-      const unreadCount = isThreadActive ? 0 : (thread.unread || 0) + 1
-      if (isDuplicateAgentReply(thread, agentReply)) {
-        return copy
+      const agentReply: Message = {
+        id: Date.now() + 1,
+        from: AGENT_CONFIG[agent].email,
+        to: user?.email || 'student@mokabura.com',
+        body: result.ok ? (result.response as string) : "Error: Failed to get response.",
+        date: new Date().toISOString(),
+        isUser: false,
       }
-      const updatedThread = { ...thread, messages: [...thread.messages, agentReply], unread: unreadCount }
-      copy[agent] = { ...copy[agent], [threadId]: updatedThread }
-      return copy
-    })
-    bumpAgentToTop(agent)
-  }
 
-  function buildExportThreads(agentKey: string, threadIds: string[]) {
-    const threads = conversations[agentKey] || {}
-    return threadIds
-      .map((threadId, index) => {
-        const thread = threads[threadId]
-        if (!thread) return null
-        return {
-          id: threadId,
-          label: `Thread ${index + 1}`,
-          subject: thread.subject || `Thread ${index + 1}`,
-          messages: thread.messages.map((msg, messageIndex) => ({
-            order: messageIndex + 1,
-            direction: (msg.isUser ? 'sent' : 'received') as 'sent' | 'received',
-            author: msg.isUser ? 'You' : AGENT_CONFIG[agentKey].name,
-            body: msg.body,
-            date: msg.date,
-          })),
+      setConversations((prev) => {
+        const copy = { ...prev }
+        const thread = copy[agent][threadId]
+        const unreadCount = isThreadActive ? 0 : (thread.unread || 0) + 1
+
+        if (isDuplicateAgentReply(thread, agentReply)) {
+          return copy
         }
-      })
-      .filter((t): t is NonNullable<typeof t> => !!t)
-  }
 
-  function showDownloadDialog(scope: DownloadScope, threadId?: string | null) {
-    if (threadOptions.length === 0) {
-      showToast('No Conversations', 'No conversations to download', { type: 'error', position: 'bottom-right', duration: 2200 })
-      return
+        const updatedThread = { ...thread, messages: [...thread.messages, agentReply], unread: unreadCount }
+        copy[agent] = { ...copy[agent], [threadId]: updatedThread }
+        return copy
+      })
+      bumpAgentToTop(agent)
+    } finally {
+      setIsSending(false)
     }
-    setDownloadScope(scope)
-    if (scope === 'single') {
-      const fallback = threadId ?? selectedThreadId ?? threadOptions[0]?.id ?? null
-      setDownloadThreadChoice(fallback)
-    } else {
-      setDownloadThreadChoice(null)
-    }
-    setDownloadDialogOpen(true)
   }
 
   function handleDownloadConfirm() {
@@ -407,7 +515,25 @@ export const App: React.FC = () => {
       return
     }
 
-    const payloadThreads = buildExportThreads(activeAgent, targetThreadIds)
+    const payloadThreads = targetThreadIds
+      .map((threadId, index) => {
+        const thread = conversations[activeAgent][threadId]
+        if (!thread) return null
+        return {
+          id: threadId,
+          label: `Thread ${index + 1}`,
+          subject: thread.subject || `Thread ${index + 1}`,
+          messages: thread.messages.map((msg, messageIndex) => ({
+            order: messageIndex + 1,
+            direction: (msg.isUser ? 'sent' : 'received') as 'sent' | 'received',
+            author: msg.isUser ? 'You' : AGENT_CONFIG[activeAgent].name,
+            body: msg.body,
+            date: msg.date,
+          })),
+        }
+      })
+      .filter((t): t is NonNullable<typeof t> => !!t)
+
     if (!payloadThreads.length) {
       showToast('Unavailable', 'Unable to assemble the conversations', { type: 'error', position: 'bottom-right', duration: 2200 })
       return
@@ -435,57 +561,71 @@ export const App: React.FC = () => {
     setDownloadDialogOpen(false)
   }
 
+  function showDownloadDialog(scope: DownloadScope, threadId?: string | null) {
+    if (threadOptions.length === 0) {
+      showToast('No Conversations', 'No conversations to download', { type: 'error', position: 'bottom-right', duration: 2200 })
+      return
+    }
+    setDownloadScope(scope)
+    if (scope === 'single') {
+      const fallback = threadId ?? selectedThreadId ?? threadOptions[0]?.id ?? null
+      setDownloadThreadChoice(fallback)
+    } else {
+      setDownloadThreadChoice(null)
+    }
+    setDownloadDialogOpen(true)
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="flex h-screen overflow-hidden">
       <ToastContainer />
-      <div className="flex h-screen">
-        <Sidebar agents={orderedAgents} activeAgent={activeAgent} onSelect={(agent) => handleAgentSelect(agent)} />
+      <Sidebar agents={orderedAgents} activeAgent={activeAgent} onSelect={(agent) => handleAgentSelect(agent)} onLogout={logout} />
 
-        <main className="flex-1 flex flex-col bg-white">
-          <Header
-            title={title}
-            downloadLabel="📥 Download Conversation"
-            onCompose={() => showCompose()}
-            onDownload={() => showDownloadDialog('all')}
-          />
+      <main className="flex-1 flex flex-col bg-white overflow-hidden">
+        <Header
+          title={title}
+          downloadLabel="📥 Download Conversation"
+          onCompose={() => showCompose()}
+          onDownload={() => showDownloadDialog('all')}
+          onClearChat={() => clearChat()}
+        />
 
-          <div className="flex-1 overflow-y-auto p-4">
-            {view === 'inbox' && (
-              <InboxView
-                agentKey={activeAgent}
-                conversations={conversations}
-                filter={threadFilter}
-                onFilterChange={setThreadFilter}
-                onOpenThread={(id: string) => openThread(id)}
-              />
-            )}
+        <div className="flex-1 overflow-y-auto p-4">
+          {view === 'inbox' && (
+            <InboxView
+              agentKey={activeAgent}
+              conversations={conversations}
+              filter={threadFilter}
+              onFilterChange={setThreadFilter}
+              onOpenThread={(id: string) => openThread(id)}
+            />
+          )}
 
-            {view === 'thread' && (
-              <ThreadView
-                thread={selectedThreadId ? conversations[activeAgent][selectedThreadId] : undefined}
-                threadId={selectedThreadId ?? undefined}
-                messageCount={messageCounts[activeAgent]}
-                limitReached={limitReached[activeAgent]}
-                onBack={() => showInbox()}
-                onSendReply={(text: string) => selectedThreadId && sendReply(selectedThreadId, text)}
-              />
-            )}
+          {view === 'thread' && (
+            <ThreadView
+              thread={selectedThreadId ? conversations[activeAgent][selectedThreadId] : undefined}
+              threadId={selectedThreadId ?? undefined}
+              messageCount={messageCounts[activeAgent]}
+              limitReached={limitReached[activeAgent]}
+              onBack={() => showInbox()}
+              onSendReply={(text: string) => selectedThreadId && sendReply(selectedThreadId, text)}
+            />
+          )}
 
-            {view === 'compose' && (
-              <ComposeView
-                toEmail={AGENT_CONFIG[activeAgent].email}
-                agentKey={activeAgent}
-                agentName={AGENT_CONFIG[activeAgent].name}
-                presetMessage={PRESET_MESSAGES[activeAgent]}
-                messageCount={messageCounts[activeAgent]}
-                limitReached={limitReached[activeAgent]}
-                onBack={() => showInbox()}
-                onSend={(subject: string, body: string) => createThreadAndSend(subject, body)}
-              />
-            )}
-          </div>
-        </main>
-      </div>
+          {view === 'compose' && (
+            <ComposeView
+              toEmail={AGENT_CONFIG[activeAgent].email}
+              agentKey={activeAgent}
+              agentName={AGENT_CONFIG[activeAgent].name}
+              presetMessage={PRESET_MESSAGES[activeAgent]}
+              messageCount={messageCounts[activeAgent]}
+              limitReached={limitReached[activeAgent]}
+              onBack={() => showInbox()}
+              onSend={(subject: string, body: string) => createThreadAndSend(subject, body)}
+            />
+          )}
+        </div>
+      </main>
       <DownloadDialog
         isOpen={isDownloadDialogOpen}
         scope={downloadScope}
@@ -498,6 +638,31 @@ export const App: React.FC = () => {
         onClose={() => setDownloadDialogOpen(false)}
         onConfirm={handleDownloadConfirm}
       />
+    </div>
+  )
+}
+
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated } = useAuth()
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />
+}
+
+export const App: React.FC = () => {
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </div>
   )
 }
