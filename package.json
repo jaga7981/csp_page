@@ -5,7 +5,8 @@
     "scripts": {
         "dev": "concurrently \"npm.cmd run dev --prefix server\" \"npm.cmd run dev --prefix client\"",
         "start": "concurrently \"npm.cmd run start --prefix server\" \"npm.cmd run start --prefix client\"",
-        "install-all": "npm.cmd install && npm.cmd install --prefix client && npm.cmd install --prefix server"
+        "install-all": "npm.cmd install && npm.cmd install --prefix client && npm.cmd install --prefix server",
+        "build": "npm run build --prefix client"
     },
     "dependencies": {
         "bcryptjs": "^3.0.3",
