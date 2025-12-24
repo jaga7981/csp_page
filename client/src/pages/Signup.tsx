@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config';
 
 const Signup: React.FC = () => {
     const [username, setUsername] = useState('');
@@ -15,7 +16,7 @@ const Signup: React.FC = () => {
         e.preventDefault();
         setError('');
         try {
-            const res = await fetch('http://localhost:4000/api/auth/signup', {
+            const res = await fetch(`${API_URL}/auth/signup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, email, password }),
@@ -39,7 +40,7 @@ const Signup: React.FC = () => {
     const handleGoogleSuccess = async (credentialResponse: any) => {
         // Same Google logic as Login
         try {
-            const res = await fetch('http://localhost:4000/api/auth/google', {
+            const res = await fetch(`${API_URL}/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential: credentialResponse.credential }),

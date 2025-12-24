@@ -12,6 +12,7 @@ import DownloadDialog from './components/DownloadDialog'
 import { exportConversations, type ConversationExportFormat } from './utils/conversationExport'
 import type { DownloadScope } from './types/download'
 import { useAuth } from './context/AuthContext'
+import { API_URL } from './config'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 
@@ -126,7 +127,7 @@ const Dashboard: React.FC = () => {
 
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`http://localhost:4000/api/messages?userId=${user.email}&agentType=${activeAgent}`)
+        const res = await fetch(`${API_URL}/messages?userId=${user.email}&agentType=${activeAgent}`)
         if (res.ok) {
           const data = await res.json()
 
@@ -293,7 +294,7 @@ const Dashboard: React.FC = () => {
 
     try {
       // Clear ALL history for agent (pass only userId and agentType)
-      const res = await fetch('http://localhost:4000/api/messages/clear', {
+      const res = await fetch(`${API_URL}/messages/clear`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.email, agentType: activeAgent })
@@ -324,7 +325,7 @@ const Dashboard: React.FC = () => {
     }
 
     try {
-      const res = await fetch('http://localhost:4000/api/messages/send', {
+      const res = await fetch(`${API_URL}/messages/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
