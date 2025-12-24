@@ -15,4 +15,17 @@ app.use('/api/auth', authRoutes)
 
 app.get('/health', (req, res) => res.json({ ok: true }))
 
+// DEBUG: Catch-all to see what path Express is actually receiving on Vercel
+app.use('*', (req, res) => {
+    console.log(`[DEBUG] 404 Hit: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({
+        error: 'Route not found (Debug)',
+        path: req.path,
+        url: req.url,
+        originalUrl: req.originalUrl,
+        method: req.method,
+        availableRoutes: ['/api/auth', '/api/messages', '/api/download']
+    });
+});
+
 export default app
