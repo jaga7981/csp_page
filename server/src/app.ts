@@ -9,9 +9,13 @@ app.use(cors())
 app.use(express.json())
 
 
-app.use('/api/messages', messagesRouter)
-app.use('/api/download', downloadRouter)
+// Mount on both paths to handle Vercel's behavior (sometimes strips /api, sometimes keeps it)
+app.use('/auth', authRoutes)
 app.use('/api/auth', authRoutes)
+app.use('/messages', messagesRouter)
+app.use('/api/messages', messagesRouter)
+app.use('/download', downloadRouter)
+app.use('/api/download', downloadRouter)
 
 app.get('/health', (req, res) => res.json({ ok: true }))
 
